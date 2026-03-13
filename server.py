@@ -240,6 +240,59 @@ def list_my_playlists(max_results: int = 25) -> str:
         return json.dumps({"error": str(e)})
 
 
+def update_playlist(
+    playlist_id: str,
+    title: str | None = None,
+    description: str | None = None,
+    privacy: str | None = None,
+) -> str:
+    """Update a playlist's title, description, or privacy setting."""
+    youtube = get_youtube_client()
+
+    try:
+        # Fetch current playlist data first
+        current = youtube.playlists().list(
+            part="snippet,status",
+            id=playlist_id,
+        ).execute()
+
+        if not current.get("items"):
+            return json.dumps({"error": "Playlist not found."})
+
+        item = current["items"][0]
+        snippet = item["snippet"]
+        status = item["status"]
+
+        # Apply updates
+        updated_snippet = {
+            "title": title if title is not None else snippet["title"],
+            "description": description if description is not None else snippet.get("description", ""),
+        }
+        updated_status = {
+            "privacyStatus": privacy if privacy is not None else status["privacyStatus"],
+        }
+
+        response = youtube.playlists().update(
+            part="snippet,status",
+            body={
+                "id": playlist_id,
+                "snippet": updated_snippet,
+                "status": updated_status,
+            },
+        ).execute()
+
+        return json.dumps({
+            "success": True,
+            "playlist_id": playlist_id,
+            "title": response["snippet"]["title"],
+            "privacy": response["status"]["privacyStatus"],
+            "url": f"https://www.youtube.com/playlist?list={playlist_id}",
+        }, indent=2)
+
+    except HttpError as e:
+        return json.dumps({"error": str(e)})
+
+
 # ---------------------------------------------------------------------------
 # MCP Server setup
 # ---------------------------------------------------------------------------
@@ -327,6 +380,24 @@ async def list_tools() -> list[Tool]:
                 },
             },
         ),
+        Tool(
+            name="update_playlist",
+            description="Update a playlist's title, description, or privacy setting (private, public, unlisted).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "playlist_id": {"type": "string", "description": "The playlist ID to update"},
+                    "title": {"type": "string", "description": "New title (optional)"},
+                    "description": {"type": "string", "description": "New description (optional)"},
+                    "privacy": {
+                        "type": "string",
+                        "enum": ["private", "public", "unlisted"],
+                        "description": "New privacy setting (optional)",
+                    },
+                },
+                "required": ["playlist_id"],
+            },
+        ),
     ]
 
 
@@ -343,6 +414,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             result = add_videos_to_playlist(**arguments)
         elif name == "list_my_playlists":
             result = list_my_playlists(**arguments)
+        elif name == "update_playlist":
+            result = update_playlist(**arguments)
         else:
             result = json.dumps({"error": f"Unknown tool: {name}"})
     except Exception as e:
