@@ -221,7 +221,7 @@ def list_my_playlists(max_results: int = 25) -> str:
 
     try:
         response = youtube.playlists().list(
-            part="snippet,contentDetails",
+            part="snippet,contentDetails,status",
             mine=True,
             maxResults=max_results,
         ).execute()
@@ -232,6 +232,7 @@ def list_my_playlists(max_results: int = 25) -> str:
                 "playlist_id": item["id"],
                 "title": item["snippet"]["title"],
                 "video_count": item["contentDetails"]["itemCount"],
+                "privacy": item["status"]["privacyStatus"],
                 "url": f"https://www.youtube.com/playlist?list={item['id']}",
             })
 
