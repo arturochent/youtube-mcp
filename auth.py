@@ -16,7 +16,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/youtube.force-ssl",
 ]
 
-BASE_DIR = Path(__file__).parent
+BASE_DIR = Path(r"C:\youtube-mcp")
 CLIENT_SECRET_FILE = BASE_DIR / "client_secret.json"
 TOKEN_FILE = BASE_DIR / "token.json"
 

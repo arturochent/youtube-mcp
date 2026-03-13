@@ -26,8 +26,9 @@ SCOPES = [
     "https://www.googleapis.com/auth/youtube.force-ssl",
 ]
 
-# Paths (relative to this file)
-BASE_DIR = Path(__file__).parent
+# Paths — use absolute path to ensure Claude Desktop finds the files
+# regardless of what working directory it launches the server from
+BASE_DIR = Path(r"C:\youtube-mcp")
 CLIENT_SECRET_FILE = BASE_DIR / "client_secret.json"
 TOKEN_FILE = BASE_DIR / "token.json"
 
