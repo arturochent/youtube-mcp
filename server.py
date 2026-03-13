@@ -242,6 +242,50 @@ def list_my_playlists(max_results: int = 25) -> str:
         return json.dumps({"error": str(e)})
 
 
+def get_playlist_items(playlist_id: str, max_results: int = 50) -> str:
+    """Get all videos inside a playlist."""
+    youtube = get_youtube_client()
+
+    try:
+        items = []
+        next_page_token = None
+
+        while True:
+            kwargs = dict(
+                part="snippet",
+                playlistId=playlist_id,
+                maxResults=min(max_results, 50),
+            )
+            if next_page_token:
+                kwargs["pageToken"] = next_page_token
+
+            response = youtube.playlistItems().list(**kwargs).execute()
+
+            for item in response.get("items", []):
+                snippet = item["snippet"]
+                resource = snippet.get("resourceId", {})
+                items.append({
+                    "position": snippet.get("position", 0) + 1,
+                    "video_id": resource.get("videoId", ""),
+                    "title": snippet.get("title", ""),
+                    "channel": snippet.get("videoOwnerChannelTitle", ""),
+                    "url": f"https://www.youtube.com/watch?v={resource.get('videoId', '')}",
+                })
+
+            next_page_token = response.get("nextPageToken")
+            if not next_page_token or len(items) >= max_results:
+                break
+
+        return json.dumps({
+            "playlist_id": playlist_id,
+            "total": len(items),
+            "items": items,
+        }, indent=2)
+
+    except HttpError as e:
+        return json.dumps({"error": str(e)})
+
+
 def update_playlist(
     playlist_id: str,
     title: str | None = None,
@@ -400,6 +444,18 @@ async def list_tools() -> list[Tool]:
                 "required": ["playlist_id"],
             },
         ),
+        Tool(
+            name="get_playlist_items",
+            description="Get all videos inside a playlist by playlist ID. Returns track list with titles, channels and URLs.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "playlist_id": {"type": "string", "description": "The playlist ID to inspect"},
+                    "max_results": {"type": "integer", "description": "Max videos to return (default 50)", "default": 50},
+                },
+                "required": ["playlist_id"],
+            },
+        ),
     ]
 
 
@@ -418,6 +474,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             result = list_my_playlists(**arguments)
         elif name == "update_playlist":
             result = update_playlist(**arguments)
+        elif name == "get_playlist_items":
+            result = get_playlist_items(**arguments)
         else:
             result = json.dumps({"error": f"Unknown tool: {name}"})
     except Exception as e:
