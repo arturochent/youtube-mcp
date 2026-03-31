@@ -296,7 +296,6 @@ def update_playlist(
     youtube = get_youtube_client()
 
     try:
-        # Fetch current playlist data first
         current = youtube.playlists().list(
             part="snippet,status",
             id=playlist_id,
@@ -309,7 +308,6 @@ def update_playlist(
         snippet = item["snippet"]
         status = item["status"]
 
-        # Apply updates
         updated_snippet = {
             "title": title if title is not None else snippet["title"],
             "description": description if description is not None else snippet.get("description", ""),
@@ -333,6 +331,170 @@ def update_playlist(
             "title": response["snippet"]["title"],
             "privacy": response["status"]["privacyStatus"],
             "url": f"https://www.youtube.com/playlist?list={playlist_id}",
+        }, indent=2)
+
+    except HttpError as e:
+        return json.dumps({"error": str(e)})
+
+
+# ---------------------------------------------------------------------------
+# NEW TOOLS
+# ---------------------------------------------------------------------------
+
+def remove_video_from_playlist(playlist_id: str, video_id: str) -> str:
+    """Remove a specific video from a playlist."""
+    youtube = get_youtube_client()
+
+    try:
+        # Find the playlistItem ID for this video
+        response = youtube.playlistItems().list(
+            part="id",
+            playlistId=playlist_id,
+            videoId=video_id,
+        ).execute()
+
+        items = response.get("items", [])
+        if not items:
+            return json.dumps({"error": "Video not found in this playlist."})
+
+        playlist_item_id = items[0]["id"]
+
+        youtube.playlistItems().delete(id=playlist_item_id).execute()
+
+        return json.dumps({
+            "success": True,
+            "removed_video_id": video_id,
+            "playlist_id": playlist_id,
+        }, indent=2)
+
+    except HttpError as e:
+        return json.dumps({"error": str(e)})
+
+
+def delete_playlist(playlist_id: str) -> str:
+    """Permanently delete a YouTube playlist."""
+    youtube = get_youtube_client()
+
+    try:
+        youtube.playlists().delete(id=playlist_id).execute()
+
+        return json.dumps({
+            "success": True,
+            "deleted_playlist_id": playlist_id,
+        }, indent=2)
+
+    except HttpError as e:
+        return json.dumps({"error": str(e)})
+
+
+def get_video_details(video_id: str) -> str:
+    """Get detailed info about a video: title, description, duration, views, likes."""
+    youtube = get_youtube_client()
+
+    try:
+        response = youtube.videos().list(
+            part="snippet,contentDetails,statistics",
+            id=video_id,
+        ).execute()
+
+        items = response.get("items", [])
+        if not items:
+            return json.dumps({"error": "Video not found."})
+
+        item = items[0]
+        snippet = item["snippet"]
+        stats = item.get("statistics", {})
+        details = item.get("contentDetails", {})
+
+        return json.dumps({
+            "video_id": video_id,
+            "title": snippet["title"],
+            "channel": snippet["channelTitle"],
+            "channel_id": snippet["channelId"],
+            "description": snippet.get("description", "")[:500],
+            "published_at": snippet.get("publishedAt", ""),
+            "duration": details.get("duration", ""),  # ISO 8601 e.g. PT4M13S
+            "view_count": stats.get("viewCount", "N/A"),
+            "like_count": stats.get("likeCount", "N/A"),
+            "comment_count": stats.get("commentCount", "N/A"),
+            "url": f"https://www.youtube.com/watch?v={video_id}",
+        }, indent=2)
+
+    except HttpError as e:
+        return json.dumps({"error": str(e)})
+
+
+def get_channel_info(channel_id: str) -> str:
+    """Get info about a YouTube channel: name, description, subscriber count, video count."""
+    youtube = get_youtube_client()
+
+    try:
+        response = youtube.channels().list(
+            part="snippet,statistics,contentDetails",
+            id=channel_id,
+        ).execute()
+
+        items = response.get("items", [])
+        if not items:
+            return json.dumps({"error": "Channel not found."})
+
+        item = items[0]
+        snippet = item["snippet"]
+        stats = item.get("statistics", {})
+
+        return json.dumps({
+            "channel_id": channel_id,
+            "name": snippet["title"],
+            "description": snippet.get("description", "")[:500],
+            "country": snippet.get("country", "N/A"),
+            "published_at": snippet.get("publishedAt", ""),
+            "subscriber_count": stats.get("subscriberCount", "hidden"),
+            "video_count": stats.get("videoCount", "N/A"),
+            "view_count": stats.get("viewCount", "N/A"),
+            "url": f"https://www.youtube.com/channel/{channel_id}",
+        }, indent=2)
+
+    except HttpError as e:
+        return json.dumps({"error": str(e)})
+
+
+def get_my_subscriptions(max_results: int = 25) -> str:
+    """List the channels the authenticated user is subscribed to."""
+    youtube = get_youtube_client()
+
+    try:
+        subscriptions = []
+        next_page_token = None
+
+        while len(subscriptions) < max_results:
+            kwargs = dict(
+                part="snippet",
+                mine=True,
+                maxResults=min(50, max_results - len(subscriptions)),
+                order="alphabetical",
+            )
+            if next_page_token:
+                kwargs["pageToken"] = next_page_token
+
+            response = youtube.subscriptions().list(**kwargs).execute()
+
+            for item in response.get("items", []):
+                snippet = item["snippet"]
+                channel_id = snippet["resourceId"]["channelId"]
+                subscriptions.append({
+                    "channel_id": channel_id,
+                    "name": snippet["title"],
+                    "description": snippet.get("description", "")[:200],
+                    "url": f"https://www.youtube.com/channel/{channel_id}",
+                })
+
+            next_page_token = response.get("nextPageToken")
+            if not next_page_token:
+                break
+
+        return json.dumps({
+            "total": len(subscriptions),
+            "subscriptions": subscriptions,
         }, indent=2)
 
     except HttpError as e:
@@ -456,6 +618,68 @@ async def list_tools() -> list[Tool]:
                 "required": ["playlist_id"],
             },
         ),
+        # ---- NEW TOOLS ----
+        Tool(
+            name="remove_video_from_playlist",
+            description="Remove a specific video from a playlist by video ID.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "playlist_id": {"type": "string", "description": "The playlist ID"},
+                    "video_id": {"type": "string", "description": "The video ID to remove"},
+                },
+                "required": ["playlist_id", "video_id"],
+            },
+        ),
+        Tool(
+            name="delete_playlist",
+            description="Permanently delete a YouTube playlist by playlist ID.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "playlist_id": {"type": "string", "description": "The playlist ID to delete"},
+                },
+                "required": ["playlist_id"],
+            },
+        ),
+        Tool(
+            name="get_video_details",
+            description=(
+                "Get detailed info about a YouTube video: title, channel, "
+                "duration, view count, like count, comment count, and more."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "video_id": {"type": "string", "description": "The YouTube video ID"},
+                },
+                "required": ["video_id"],
+            },
+        ),
+        Tool(
+            name="get_channel_info",
+            description=(
+                "Get info about a YouTube channel: name, description, "
+                "subscriber count, video count, total views, and more."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "channel_id": {"type": "string", "description": "The YouTube channel ID"},
+                },
+                "required": ["channel_id"],
+            },
+        ),
+        Tool(
+            name="get_my_subscriptions",
+            description="List all channels the authenticated user is subscribed to.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "max_results": {"type": "integer", "description": "Max subscriptions to return (default 25)", "default": 25},
+                },
+            },
+        ),
     ]
 
 
@@ -476,6 +700,17 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             result = update_playlist(**arguments)
         elif name == "get_playlist_items":
             result = get_playlist_items(**arguments)
+        # ---- NEW TOOLS ----
+        elif name == "remove_video_from_playlist":
+            result = remove_video_from_playlist(**arguments)
+        elif name == "delete_playlist":
+            result = delete_playlist(**arguments)
+        elif name == "get_video_details":
+            result = get_video_details(**arguments)
+        elif name == "get_channel_info":
+            result = get_channel_info(**arguments)
+        elif name == "get_my_subscriptions":
+            result = get_my_subscriptions(**arguments)
         else:
             result = json.dumps({"error": f"Unknown tool: {name}"})
     except Exception as e:
