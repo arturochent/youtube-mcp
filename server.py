@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
+
 """
 YouTube MCP Server
+
 Allows Claude to search YouTube channels/artists and manage playlists
 via the YouTube Data API v3 with OAuth2 authentication.
 """
@@ -26,12 +28,11 @@ SCOPES = [
     "https://www.googleapis.com/auth/youtube.force-ssl",
 ]
 
-# Paths — use absolute path to ensure Claude Desktop finds the files
-# regardless of what working directory it launches the server from
-BASE_DIR = Path(r"C:\youtube-mcp")
+# Paths — resolved relative to this file so the server works on any OS
+# and regardless of what working directory Claude Desktop launches from.
+BASE_DIR = Path(__file__).parent
 CLIENT_SECRET_FILE = BASE_DIR / "client_secret.json"
 TOKEN_FILE = BASE_DIR / "token.json"
-
 
 # ---------------------------------------------------------------------------
 # Auth
@@ -346,7 +347,6 @@ def remove_video_from_playlist(playlist_id: str, video_id: str) -> str:
     youtube = get_youtube_client()
 
     try:
-        # Find the playlistItem ID for this video
         response = youtube.playlistItems().list(
             part="id",
             playlistId=playlist_id,
@@ -358,7 +358,6 @@ def remove_video_from_playlist(playlist_id: str, video_id: str) -> str:
             return json.dumps({"error": "Video not found in this playlist."})
 
         playlist_item_id = items[0]["id"]
-
         youtube.playlistItems().delete(id=playlist_item_id).execute()
 
         return json.dumps({
@@ -377,7 +376,6 @@ def delete_playlist(playlist_id: str) -> str:
 
     try:
         youtube.playlists().delete(id=playlist_id).execute()
-
         return json.dumps({
             "success": True,
             "deleted_playlist_id": playlist_id,
@@ -713,6 +711,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             result = get_my_subscriptions(**arguments)
         else:
             result = json.dumps({"error": f"Unknown tool: {name}"})
+
     except Exception as e:
         result = json.dumps({"error": str(e)})
 

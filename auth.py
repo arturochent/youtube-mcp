@@ -16,7 +16,8 @@ SCOPES = [
     "https://www.googleapis.com/auth/youtube.force-ssl",
 ]
 
-BASE_DIR = Path(r"C:\youtube-mcp")
+# Resolved relative to this file — works on Windows, Mac, and Linux
+BASE_DIR = Path(__file__).parent
 CLIENT_SECRET_FILE = BASE_DIR / "client_secret.json"
 TOKEN_FILE = BASE_DIR / "token.json"
 
